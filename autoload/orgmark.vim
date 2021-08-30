@@ -254,6 +254,81 @@ function! orgmark#tryFoldListItem()
     call orgmark#foldRange(l:ln, l:endLnum - 1)
 endfunction
 
+function! orgmark#listType(text)
+    let l:index = 0
+    let l:len = len(a:text)
+    " skip leading white spaces
+
+    while l:index <= l:len && (a:text == " " || a:text == "\t")
+        let l:index = l:index + 1
+    endwhile
+
+    let l:liststr = a:text[l:index:]
+    if l:liststr =~ '^[-+*] *'
+        return l:liststr[0]
+    elseif l:liststr =~ '\d\+\. *'
+        return "N."
+    elseif l:liststr =~ '[a-zA-Z]\+\. *'
+        return "A."
+    elseif l:liststr =~ '\d\+) *'
+        return "N)"
+    elseif l:liststr =~ '[a-zA-Z]\+) *'
+        return "A)"
+    else
+        return ""
+    endif
+endfunction
+
+function! orgmark#tryFoldList()
+    let l:pos = getpos('.')
+    let l:indent = indent('.')
+    let l:start = line('.')
+    let l:currentType = orgmark#listType(getline('.'))
+    if l:currentType == ''
+        return
+    endif
+
+    " search back for indent level and not the same type
+    while l:start > 0
+        if indent(l:start) < l:indent
+            break
+        endif
+        if indent(l:start) == l:indent && orgmark#listType(getline(l:start)) != l:currentType
+            break
+        endif
+        let l:start -= 1
+    endwhile
+
+    " search down
+    while empty(getline(l:start)) && l:start <= line('$')
+        let l:start += 1
+    endwhile
+
+    let l:runningStart = l:start
+    let l:endLnum = l:start
+    for line in range(l:start + 1, line('$'))
+        let l:endLnum = line
+        if indent(line) == l:indent && orgmark#listType(getline(line)) == l:currentType
+            call orgmark#foldRange(l:runningStart, line - 1)
+            let l:runningStart = line
+        elseif empty(getline(line)) || indent(line) > l:indent
+            continue
+        else
+            break
+        endif
+    endfor
+
+    " search back and skip empty lines
+    for line in range(l:endLnum - 1, l:runningStart, -1)
+        if !empty(getline(line))
+            break
+        endif
+        let l:endLnum = line
+    endfor
+
+    call orgmark#foldRange(l:runningStart, l:endLnum - 1)
+endfunction
+
 let s:headerRegex = '\v^#+[^#]*$'
 let s:fencedRegex = '\v(^\s*```[^`]+$)|(^\s*```$)'
 let s:listRegex = '\v\s*([-+*]|\d+.|[a-z]\))\s'
