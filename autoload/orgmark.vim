@@ -3,13 +3,8 @@
 " Group 3: fenced end
 " Group 4: list item
 
-function! s:Wrapper(group)
-    function! s:Handler(lnum, col) closure
-        echo [a:group, a:lnum, a:col]
-    endfunction
-    return funcref('s:Handler')
-endfunction
-
+"==================================================
+" Helper: build tags for header & fenced code
 
 let s:levelRegexpDict = {
     \ 1: '\v^(#[^#]@=|.+\n\=+$)',
@@ -86,13 +81,12 @@ function! orgmark#rebuildMarks()
 endfunction
 
 
-function! orgmark#foldRange(start_line, next_start_line)
-    if a:start_line <= 0
+function! orgmark#foldRange(start_line, end_line)
+    if a:start_line <= 0 || a:end_line <= 0 || a:start_line >= a:end_line
         return
     endif
 
-    let l:end_line = a:next_start_line >= line('$') ? line('$') : a:next_start_line - 1
-    execute a:start_line ',' l:end_line 'fold'
+    execute a:start_line ',' a:end_line 'fold'
 endfunction
 
 "==================================================
@@ -137,7 +131,7 @@ function! orgmark#cycleContent()
         " tag contains
         " {'type': 'Header', 'level': l:level, 'ln': a:lnum, 'col': a:col}
         if !empty(l:last_tag)
-            call orgmark#foldRange(l:last_tag.ln, tag.ln)
+            call orgmark#foldRange(l:last_tag.ln, tag.ln-1)
         endif
         let l:last_tag = tag
     endfor
@@ -167,7 +161,7 @@ function! orgmark#cycleOverview()
         endif
 
         if !empty(l:last_tag)
-            call orgmark#foldRange(l:last_tag.ln, tag.ln)
+            call orgmark#foldRange(l:last_tag.ln, tag.ln - 1)
         endif
 
         let l:last_tag = tag
@@ -175,7 +169,7 @@ function! orgmark#cycleOverview()
     endfor
 
     if !empty(l:last_tag)
-        call orgmark#foldRange(l:last_tag.ln, line('.'))
+        call orgmark#foldRange(l:last_tag.ln, line('$'))
     endif
 
     execute l:saved_lnum
@@ -208,7 +202,7 @@ function! orgmark#tryFoldHeader()
 
     let l:currentLevel = l:tags[0].level
     let l:tagsWithLeLevel = filter(copy(l:headerTags), {idx, tag -> tag.ln > l:ln && tag.level <= l:currentLevel})
-    let l:endLnum = empty(l:tagsWithLeLevel) ? line('$') : l:tagsWithLeLevel[0].ln
+    let l:endLnum = empty(l:tagsWithLeLevel) ? line('$') : l:tagsWithLeLevel[0].ln - 1
     call orgmark#foldRange(l:ln, l:endLnum)
 endfunction
 
@@ -229,14 +223,14 @@ function! orgmark#tryFoldFenced()
             continue
         endif
         if tag.type == 'FenceEnd'
-            let l:endLnum = tag.ln + 1
+            let l:endLnum = tag.ln
             break
         endif
     endfor
     call orgmark#foldRange(l:currentTag.ln, l:endLnum)
 endfunction
 
-function! orgmark#tryFoldList()
+function! orgmark#tryFoldListItem()
     let l:ln = line('.')
     let l:indent = indent(l:ln)
     let l:endLnum = line('$')
@@ -257,7 +251,7 @@ function! orgmark#tryFoldList()
         let l:endLnum = line
     endfor
 
-    call orgmark#foldRange(l:ln, l:endLnum)
+    call orgmark#foldRange(l:ln, l:endLnum - 1)
 endfunction
 
 let s:headerRegex = '\v^#+[^#]*$'
@@ -276,7 +270,7 @@ function! orgmark#toggleFold()
     elseif l:text =~ s:fencedRegex
         call orgmark#tryFoldFenced()
     elseif l:text =~ s:listRegex
-        call orgmark#tryFoldList()
+        call orgmark#tryFoldListItem()
     endif
 endfunction
 
