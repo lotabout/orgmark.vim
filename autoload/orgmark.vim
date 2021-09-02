@@ -78,7 +78,7 @@ function! orgmark#buildMarksByGrep()
         let l:splits = split(line, ':')
         let l:lnum = str2nr(l:splits[0])
         let l:line = getline(l:lnum)
-        if l:line =~ '\v^#+[^#]*$'
+        if l:line =~ '\v^#+[^#]*$' && !l:in_fence
             call add(l:marks, orgmark#getHeaderTag(l:lnum))
         elseif l:line =~ '\v^\s*```[^`]+$'
             call add(l:marks, orgmark#getFenceTag(l:lnum, l:in_fence))
