@@ -16,7 +16,7 @@ let s:levelRegexpDict = {
 \ }
 
 " calculate the level of current header, assume line (l:num) is a header
-function! orgmark#HeaderLevelOf(lnum, col)
+function! orgmark#HeaderLevelOf(lnum)
     let l:text = getline(a:lnum)
     for l:key in keys(s:levelRegexpDict)
         if l:text =~ get(s:levelRegexpDict, l:key)
@@ -26,20 +26,20 @@ function! orgmark#HeaderLevelOf(lnum, col)
     return 0
 endfunction
 
-function! orgmark#getHeaderTag(lnum, col)
-    let l:level = orgmark#HeaderLevelOf(a:lnum, a:col)
-    return {'type': 'Header', 'level': l:level, 'ln': a:lnum, 'col': a:col}
+function! orgmark#getHeaderTag(lnum)
+    let l:level = orgmark#HeaderLevelOf(a:lnum)
+    return {'type': 'Header', 'level': l:level, 'ln': a:lnum}
 endfunction
 
-function! orgmark#getFenceTag(lnum, col, in_fence)
+function! orgmark#getFenceTag(lnum, in_fence)
     let l:text = getline(a:lnum)
     if l:text =~ '^\s*```[^`]\+$' " fenced start with language
         let l:lang = substitute(l:text, '^\s*```', '', '')
-        return {'type': 'FenceStart', 'ln': a:lnum, 'col': a:col}
+        return {'type': 'FenceStart', 'ln': a:lnum}
     elseif !a:in_fence
-        return {'type': 'FenceStart', 'ln': a:lnum, 'col': a:col}
+        return {'type': 'FenceStart', 'ln': a:lnum}
     else
-        return {'type': 'FenceEnd', 'ln': a:lnum, 'col': a:col}
+        return {'type': 'FenceEnd', 'ln': a:lnum}
     endif
 endfunction
 
@@ -55,17 +55,39 @@ function! orgmark#buildMarks()
     let [l:lnum, l:col, l:group] = searchpos(s:headerRegexes, 'cpeW')
     while l:group > 1
         if l:group == 2 && !l:in_fence " header
-            call add(l:marks, orgmark#getHeaderTag(l:lnum, l:col))
+            call add(l:marks, orgmark#getHeaderTag(l:lnum))
         elseif l:group == 3 " fenced code (with language) start
-            call add(l:marks, orgmark#getFenceTag(l:lnum, l:col, l:in_fence))
+            call add(l:marks, orgmark#getFenceTag(l:lnum, l:in_fence))
             let l:in_fence = v:true
         elseif l:group == 4 " toggle fenced code
-            call add(l:marks, orgmark#getFenceTag(l:lnum, l:col, l:in_fence))
+            call add(l:marks, orgmark#getFenceTag(l:lnum, l:in_fence))
             let l:in_fence = !l:in_fence
         endif
         let [l:lnum, l:col, l:group] = searchpos(s:headerRegexes, 'Wp')
     endwhile
     call setpos('.', l:pos)
+    return l:marks
+endfunction
+
+function! orgmark#buildMarksByGrep()
+    let l:matchedLines = systemlist('grep --line-number ' . "'" . '\(^#\+[^#]*$\)\|\(^\s*```[^`]\+$\)\|\(^\s*```$\)'. "'", bufnr())
+
+    let l:marks = []
+    let l:in_fence = v:false
+    for line in l:matchedLines
+        let l:splits = split(line, ':')
+        let l:lnum = str2nr(l:splits[0])
+        let l:line = getline(l:lnum)
+        if l:line =~ '\v^#+[^#]*$'
+            call add(l:marks, orgmark#getHeaderTag(l:lnum))
+        elseif l:line =~ '\v^\s*```[^`]+$'
+            call add(l:marks, orgmark#getFenceTag(l:lnum, l:in_fence))
+            let l:in_fence = v:true
+        elseif l:line =~ '\v^\s*```$'
+            call add(l:marks, orgmark#getFenceTag(l:lnum, l:in_fence))
+            let l:in_fence = !l:in_fence
+        endif
+    endfor
     return l:marks
 endfunction
 
@@ -77,7 +99,8 @@ function! orgmark#ensureMarks()
 endfunction
 
 function! orgmark#rebuildMarks()
-    let b:orgmark_marks = orgmark#buildMarks()
+    " let b:orgmark_marks = orgmark#buildMarks()
+    let b:orgmark_marks = orgmark#buildMarksByGrep()
 endfunction
 
 
