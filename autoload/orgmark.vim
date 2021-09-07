@@ -15,6 +15,11 @@ let s:levelRegexpDict = {
     \ 6: '\v^######[^#]@='
 \ }
 
+let s:headerRegex = '\v^#+[^#]*$'
+let s:fencedRegex = '\v(^\s*```[^`]+$)|(^\s*```$)'
+let s:listRegex = '\v\s*([-+*]|\d+.|[a-z]\))\s'
+
+
 " calculate the level of current header, assume line (l:num) is a header
 function! orgmark#HeaderLevelOf(lnum)
     let l:text = getline(a:lnum)
@@ -119,20 +124,23 @@ endfunction
 " OVERVIEW: show only the first level header
 " CONTENTS: show all headers but no content
 " SHOW ALL: show everything
-function! orgmark#cycle()
-    if !exists('b:orgmark_cycle_status')
-        let b:orgmark_cycle_status = 'SHOW ALL'
+function! orgmark#cycleHeader()
+    if !exists('b:orgmark_cycle_header_status')
+        let b:orgmark_cycle_header_status = 'SHOW ALL'
     endif
 
-    if b:orgmark_cycle_status == 'SHOW ALL'
+    if b:orgmark_cycle_header_status == 'SHOW ALL'
         call orgmark#cycleOverview()
-        let b:orgmark_cycle_status = 'OVERVIEW'
-    elseif b:orgmark_cycle_status == 'OVERVIEW'
+        echo "HEADER: OVERVIEW"
+        let b:orgmark_cycle_header_status = 'OVERVIEW'
+    elseif b:orgmark_cycle_header_status == 'OVERVIEW'
         call orgmark#cycleContent()
-        let b:orgmark_cycle_status = 'CONTENTS'
+        echo "HEADER: CONTENTS"
+        let b:orgmark_cycle_header_status = 'CONTENTS'
     else
         call orgmark#cycleShowAll()
-        let b:orgmark_cycle_status = 'SHOW ALL'
+        echo "HEADER: SHOW ALL"
+        let b:orgmark_cycle_header_status = 'SHOW ALL'
     endif
 endfunction
 
@@ -203,12 +211,12 @@ endfunction
 
 " try to unfold if current line is the start of a fold
 " And return true if action is taken
-function! orgmark#tryUnfold()
-    let l:ln = line('.')
+function! orgmark#tryUnfold(...)
+    let l:ln = get(a:, 1, line('.'))
     let l:fold_start = foldclosed(l:ln)
     if l:fold_start > 0
-        silent normal! zo
         call cursor(l:fold_start, 0)
+        silent! normal! zo
         return v:true
     endif
     return v:false
@@ -277,10 +285,6 @@ function! orgmark#tryFoldListItem()
     call orgmark#foldRange(l:ln, l:endLnum - 1)
 endfunction
 
-let s:headerRegex = '\v^#+[^#]*$'
-let s:fencedRegex = '\v(^\s*```[^`]+$)|(^\s*```$)'
-let s:listRegex = '\v\s*([-+*]|\d+.|[a-z]\))\s'
-
 function! orgmark#toggleFold()
     let l:unfold = orgmark#tryUnfold()
     if l:unfold
@@ -300,4 +304,217 @@ endfunction
 function! orgmark#FoldText()
   let line = getline(v:foldstart)
   return line
+endfunction
+
+"==================================================
+" Orgmark Fold List
+
+function! orgmark#listType(text)
+    let l:index = 0
+    let l:len = len(a:text)
+    " skip leading white spaces
+
+    while l:index <= l:len && (a:text[l:index] == " " || a:text[l:index] == "\t")
+        let l:index = l:index + 1
+    endwhile
+
+    let l:liststr = a:text[l:index:]
+    if l:liststr =~ '^[-+*] *'
+        return l:liststr[0]
+    elseif l:liststr =~# '^\d\+\. *'
+        return "N."
+    elseif l:liststr =~# '^[a-zA-Z]\+\. *'
+        return "A."
+    elseif l:liststr =~# '^\d\+) *'
+        return "N)"
+    elseif l:liststr =~# '^[a-zA-Z]\+) *'
+        return "A)"
+    else
+        return ""
+    endif
+    'https://www.safaribooksonline.com/library/view/kafka-the-definitive/9781491936153/ch04.html'
+endfunction
+
+" If the current line is a list item, return current line number
+" Else search up til the first
+" If nothing is found, return [0, 0]
+function! orgmark#findInnerParentList()
+    let l:current_line = line('.')
+    let l:indent = indent(l:current_line)
+    while l:current_line > 0
+        let l:current_indent = indent(l:current_line)
+        if l:current_indent <= l:indent && orgmark#listType(getline(l:current_line)) != ''
+            return [l:current_line, l:current_indent]
+        endif
+        let l:current_line = l:current_line - 1
+    endwhile
+    return [0, 0]
+endfunction
+
+function! orgmark#findOuterMostParentList()
+    let l:current_line = line('.')
+    let l:last_list_type = ''
+    let l:last_indent = 10000
+    let l:ret_line = -1
+
+    while l:current_line > 0
+        let l:line = getline(l:current_line)
+        let l:list_type = orgmark#listType(l:line)
+        let l:indent = indent(l:current_line)
+        if empty(l:line)
+            " pass
+        elseif l:indent == 0 && l:list_type == ''
+            " already found list and find a non-list top level line
+            break
+        elseif l:indent < l:last_indent
+            let l:last_indent = l:indent
+            let l:last_list_type = l:list_type
+            let l:ret_line = l:current_line
+        elseif l:indent == l:last_indent && l:last_list_type != '' && l:list_type == l:last_list_type
+            let l:ret_line = l:current_line
+        elseif l:indent == 0 && l:last_list_type != '' && l:list_type != l:last_list_type
+            " indent = 0 to prevent this condition
+            " - Content
+            "   Still          <-- False positoive here
+            "   - Sublit
+            break
+        endif
+
+        let l:current_line -= 1
+    endwhile
+
+    return [l:ret_line, l:last_indent]
+endfunction
+
+
+" Will find all sub-lists that could be expanded with start_line and indent
+" callback: takes two args: (start_line, end_line_inclusive)
+function! orgmark#doWithList(start_line, indent, callback)
+    let l:indent = a:indent
+    let l:start = a:start_line
+    let l:current_type = orgmark#listType(getline(a:start_line))
+    if l:current_type == ''
+        return
+    endif
+
+    " search back for indent level and not the same type
+    while l:start > 0
+        if indent(l:start) < l:indent
+            break
+        endif
+        if indent(l:start) == l:indent && orgmark#listType(getline(l:start)) != l:current_type
+            break
+        endif
+        let l:start -= 1
+    endwhile
+
+    " search down
+    while empty(getline(l:start)) && l:start <= line('$')
+        let l:start += 1
+    endwhile
+
+    let l:running_start = l:start
+    let l:running_end = l:start
+    let l:ret = v:false
+
+    for line in range(l:start + 1, line('$'))
+        let l:running_end = line
+        let l:current_indent = indent(line)
+        let l:current_list_type = orgmark#listType(getline(line))
+
+        if empty(getline(line)) || l:current_indent > l:indent
+            continue
+        elseif l:current_indent == l:indent && l:current_list_type == l:current_type
+            let l:ret = a:callback(l:running_start, line - 1)
+            let l:running_start = line
+        else
+            " same level, non list
+            break
+        endif
+    endfor
+
+    " search back and skip empty lines
+    for line in range(l:running_end - 1, l:running_start, -1)
+        let l:running_end = line
+        if !empty(getline(line))
+            break
+        endif
+    endfor
+
+    if l:running_end > l:running_start
+        let l:ret = a:callback(l:running_start, l:running_end)
+    endif
+
+    return l:ret
+endfunction
+
+" indent: fold list whose indent >= a:indent
+function! orgmark#tryFoldList(start_line, indent)
+    call orgmark#doWithList(a:start_line, a:indent, funcref('orgmark#foldRange'))
+endfunction
+
+function! orgmark#tryUnfoldList(start_line, indent)
+    call orgmark#doWithList(a:start_line, a:indent, funcref('orgmark#tryUnfold'))
+endfunction
+
+function! orgmark#foldOuterList()
+    let [l:start, l:indent] = orgmark#findOuterMostParentList()
+    if l:start > 0
+        call orgmark#tryFoldList(l:start, l:indent)
+    endif
+endfunction
+
+function! orgmark#unfoldOuterList()
+    let l:pos = getpos('.')
+    let [l:start, l:indent] = orgmark#findOuterMostParentList()
+    call orgmark#tryUnfoldList(l:start, l:indent)
+    call setpos('.', l:pos)
+endfunction
+
+function! orgmark#foldInnerList()
+    let [l:start, l:indent] = orgmark#findInnerParentList()
+    if l:start > 0
+        call orgmark#tryFoldList(l:start, l:indent)
+    endif
+endfunction
+
+function! orgmark#unfoldInnerList()
+    let l:pos = getpos('.')
+    let [l:start, l:indent] = orgmark#findInnerParentList()
+    call orgmark#tryUnfoldList(l:start, l:indent)
+    call setpos('.', l:pos)
+endfunction
+
+" Accept 3 modes
+" PARENT: show only the first level header
+" INNER: show all headers but no content
+" SHOW ALL: show everything
+function! orgmark#cycleList()
+    if !exists('b:orgmark_cycle_list_status')
+        let b:orgmark_cycle_list_status = 'SHOW ALL'
+    endif
+
+    if b:orgmark_cycle_list_status == 'SHOW ALL'
+        call orgmark#foldOuterList()
+        echo "LIST: FOLD PARENT"
+        let b:orgmark_cycle_list_status = 'PARENT'
+    elseif b:orgmark_cycle_list_status == 'PARENT'
+        call orgmark#unfoldOuterList()
+        call orgmark#foldInnerList()
+        echo "LIST: FOLD INNER"
+        let b:orgmark_cycle_list_status = 'INNER'
+    else
+        call orgmark#unfoldInnerList()
+        echo "LIST: SHOW ALL"
+        let b:orgmark_cycle_list_status = 'SHOW ALL'
+    endif
+endfunction
+
+function! orgmark#cycle()
+    let l:text = getline('.')
+    if l:text =~ s:headerRegex
+        call orgmark#cycleHeader()
+    elseif l:text =~ s:listRegex
+        call orgmark#cycleList()
+    endif
 endfunction
