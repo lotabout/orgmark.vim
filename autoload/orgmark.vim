@@ -242,23 +242,38 @@ function! orgmark#tryFoldFenced()
     let l:ln = line('.')
 
     let l:tags =  filter(copy(l:marks), {idx, tag -> tag.ln == l:ln})
-    if empty(l:tags) || l:tags[0].type != 'FenceStart'
+    if empty(l:tags) || (l:tags[0].type != 'FenceStart' && l:tags[0].type != 'FenceEnd')
         return
     endif
+
     let l:currentTag = l:tags[0]
 
-    " find next FenceEnd
-    let l:endLnum = line('$')
-    for tag in l:marks
-        if tag.ln <= l:ln
-            continue
-        endif
-        if tag.type == 'FenceEnd'
-            let l:endLnum = tag.ln
-            break
-        endif
-    endfor
-    call orgmark#foldRange(l:currentTag.ln, l:endLnum)
+    if l:currentTag.type == 'FenceStart'
+        " find next FenceEnd
+        let l:endLnum = line('$')
+        for tag in l:marks
+            if tag.ln <= l:ln
+                continue
+            endif
+            if tag.type == 'FenceEnd'
+                let l:endLnum = tag.ln
+                break
+            endif
+        endfor
+        call orgmark#foldRange(l:currentTag.ln, l:endLnum)
+    else
+        " find previous FenceStart
+        let l:start_line = 0
+        for tag in l:marks
+            if tag.ln > l:ln
+                break
+            endif
+            if tag.type == 'FenceStart'
+                let l:start_line = tag.ln
+            endif
+        endfor
+        call orgmark#foldRange(l:start_line, l:currentTag.ln)
+    endif
 endfunction
 
 function! orgmark#tryFoldListItem()
