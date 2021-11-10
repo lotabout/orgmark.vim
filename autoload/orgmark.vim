@@ -551,9 +551,11 @@ elseif has('unix')
   endif
 endif
 
-function! orgmark#previewMarkdown()
-    let b:curr_file = expand('%:p')
-    call system(s:orgmarkScriptPath . '/../bin/preview.py -i ' . b:curr_file . ' -o /tmp/vim-markdown-preview.html')
+" this function takes in a line range
+function! orgmark#previewMarkdown() range
+    let l:lines = getline(a:firstline, a:lastline)
+    let l:markdown_content = join(l:lines,"\n")
+    call system(s:orgmarkScriptPath . '/../bin/preview.py ' . ' -o /tmp/vim-markdown-preview.html', l:markdown_content)
 
     if s:osname == 'unix'
         call system('xdg-open /tmp/vim-markdown-preview.html 1>/dev/null 2>/dev/null &')
