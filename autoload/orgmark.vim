@@ -533,3 +533,31 @@ function! orgmark#cycle()
         call orgmark#cycleList()
     endif
 endfunction
+
+"==================================================
+" Preview markdown
+
+let s:orgmarkScriptPath = resolve(expand('<sfile>:p:h'))
+let s:osname = 'Unidentified'
+
+if has('win32') || has('win64')
+  let s:osname = 'win32'
+elseif has('unix')
+  let s:uname = system("uname")
+  if has('mac') || has('macunix') || has("gui_macvim") || s:uname == "Darwin\n"
+    let s:osname = 'mac'
+  else
+    let s:osname = 'unix'
+  endif
+endif
+
+function! orgmark#previewMarkdown()
+    let b:curr_file = expand('%:p')
+    call system(s:orgmarkScriptPath . '/../bin/preview.py -i ' . b:curr_file . ' -o /tmp/vim-markdown-preview.html')
+
+    if s:osname == 'unix'
+        call system('xdg-open /tmp/vim-markdown-preview.html 1>/dev/null 2>/dev/null &')
+    elseif s:osname == 'mac'
+        call system('open -g /tmp/vim-markdown-preview.html')
+    endif
+endfunction

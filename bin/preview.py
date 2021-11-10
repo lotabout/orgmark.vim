@@ -31,7 +31,7 @@ for script_file in script_files:
         line = f'<script src="{script_file}"></script>'
     else:
         path = script_file if script_file.startswith('/') else os.path.join(SCRIPT_PATH, script_file)
-        with open(script_file) as fp:
+        with open(path) as fp:
             script_content = fp.read()
             line = f'<script>{script_content}</script>'
     scripts.append(line)
@@ -56,10 +56,15 @@ with open(template_file) as fp:
 
 import fileinput
 import sys
+import argparse
 
-markdown_file = sys.argv[1]
-with open(markdown_file) as fp:
-    markdown = fp.read()
+parser = argparse.ArgumentParser(description='convert markdown to previewable html')
+parser.add_argument('-i', '--input', nargs = '?', type=argparse.FileType('r'), default=sys.stdin)
+parser.add_argument('-o', '--output', nargs='?', type=argparse.FileType('w'), help='The file name to output', default=sys.stdout)
+args = parser.parse_args()
+
+# markdown_file = args.input
+markdown = args.input.read()
 
 import base64
 markdown_base64 = base64.b64encode(markdown.encode('utf8')).decode('utf8')
@@ -70,4 +75,4 @@ renderred = renderred.replace(PLACE_HOLDER_SCRIPT, script_renderred)
 renderred = renderred.replace(PLACE_HOLDER_MARKDOWN, markdown)
 renderred = renderred.replace(PLACE_HOLDER_MARKDOWN_BASE64, markdown_base64)
 
-print(renderred)
+args.output.write(renderred)
