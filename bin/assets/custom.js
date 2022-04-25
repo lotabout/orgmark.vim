@@ -45,6 +45,16 @@ var renderer = (function () {
         });
       return `<h${level} id="${anchor}"><a class="header-anchor" href="#${anchor}"></a>${text}</h${level}>\n`
     };
+
+    // mermaid
+    renderer.defaultCode = renderer.code;
+    renderer.code = function(code, language) {
+      if (language === 'mermaid') {
+        return '<div class="mermaid">'+code+'</div>'
+      } else {
+        return renderer.defaultCode(code, language)
+      }
+    }
     return renderer;
 })();
 

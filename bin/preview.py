@@ -19,6 +19,7 @@ script_files = [
     'assets/highlight.min.js',
     'assets/marked.min.js',
     'assets/MathJax.js',
+    'assets/mermaid.min.js',
     'assets/custom.js',
 ]
 
