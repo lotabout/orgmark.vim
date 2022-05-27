@@ -1,5 +1,7 @@
 syn match   orgmarkCheckboxEmpty /\[ \]/ contained
 syn match   orgmarkCheckboxPending /\[o\]/ contained
+syn match   orgmarkCheckboxPending /\[O\]/ contained
+syn match orgmarkCheckboxComplete /\[x\]/ contained
 syn match orgmarkCheckboxComplete /\[X\]/ contained
 
 " copied and modified from vim-markdown
